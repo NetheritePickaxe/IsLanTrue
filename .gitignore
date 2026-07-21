@@ -1,0 +1,27 @@
+### Build ###
+out/
+lib/
+deps/
+extract/
+*.class
+*.jar
+
+### VS Code ###
+.vscode/
+*.code-workspace
+
+### IntelliJ IDEA ###
+.idea/
+*.iml
+*.iws
+*.ipr
+
+### Eclipse ###
+.settings/
+.project
+.classpath
+bin/
+
+### OS ###
+.DS_Store
+Thumbs.db

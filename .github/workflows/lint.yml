@@ -1,0 +1,68 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  JAVA_VERSION: '17'
+  ASM_VERSION: '9.7.1'
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Download ASM
+        shell: bash
+        run: |
+          mkdir -p lib
+          for dep in asm asm-tree asm-commons; do
+            curl -sL "https://repo1.maven.org/maven2/org/ow2/asm/${dep}/${{ env.ASM_VERSION }}/${dep}-${{ env.ASM_VERSION }}.jar" \
+              -o "lib/${dep}-${{ env.ASM_VERSION }}.jar"
+          done
+
+      - name: Compile
+        run: javac -Werror -Xlint:all -cp "lib/*" -d out src/main/java/cn/pickaxe/islantrue/IsLanTrue.java
+
+  style:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check formatting
+        run: |
+          if git ls-files -z '*.java' '*.yml' '*.md' '*.MF' .gitignore | xargs -0 grep -lP '\r$' 2>/dev/null; then
+            echo "::error::CRLF line endings found"; exit 1
+          fi
+          if git ls-files -z '*.java' '*.yml' '*.md' '*.MF' .gitignore | xargs -0 grep -nP ' +$' 2>/dev/null; then
+            echo "::error::Trailing whitespace found"; exit 1
+          fi
+          if git ls-files -z '*.java' '*.yml' '*.md' '*.MF' | xargs -0 grep -nP '\t' 2>/dev/null; then
+            echo "::error::Tab characters found"; exit 1
+          fi
+          echo "OK: formatting checks passed"
+
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate MANIFEST.MF
+        run: |
+          mf=src/main/resources/META-INF/MANIFEST.MF
+          for attr in Main-Class Premain-Class Agent-Class Can-Retransform-Classes Can-Redefine-Classes Manifest-Version; do
+            if ! grep -qi "^$attr:" "$mf"; then
+              echo "::error file=$mf::Missing $attr"; exit 1
+            fi
+          done
+          echo "OK: MANIFEST.MF valid"

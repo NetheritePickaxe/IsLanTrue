@@ -1,0 +1,52 @@
+name: Build
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  JAVA_VERSION: '17'
+  ASM_VERSION: '9.7.1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Download ASM
+        shell: bash
+        run: |
+          mkdir -p lib
+          for dep in asm asm-tree asm-commons; do
+            curl -sL "https://repo1.maven.org/maven2/org/ow2/asm/${dep}/${{ env.ASM_VERSION }}/${dep}-${{ env.ASM_VERSION }}.jar" \
+              -o "lib/${dep}-${{ env.ASM_VERSION }}.jar"
+          done
+
+      - name: Compile
+        run: javac -cp "lib/*" -d out src/main/java/cn/pickaxe/islantrue/IsLanTrue.java
+
+      - name: Build fat JAR
+        shell: bash
+        run: |
+          mkdir -p deps
+          for jar in lib/*.jar; do
+            unzip -o -q "$jar" -d deps
+          done
+          rm -rf deps/META-INF/MANIFEST.MF deps/META-INF/*.SF deps/META-INF/*.RSA deps/META-INF/*.DSA 2>/dev/null || true
+          jar cfm islantrue.jar src/main/resources/META-INF/MANIFEST.MF -C out . -C deps .
+          rm -rf out deps
+
+      - run: java -jar islantrue.jar --help
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: islantrue.jar
+          archive: false
+          retention-days: 7
