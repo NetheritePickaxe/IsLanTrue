@@ -28,7 +28,7 @@ islantrue
 ```
 
 > **Android**: 基于 PojavLauncher 后端的启动器（如 PojavLauncher、ZalithLauncher2、FCL 等）
-> 运行完整 HotSpot JVM，可直接使用 `java -jar islantrue.jar` 或 `-javaagent` 注入。
+> 运行完整 HotSpot JVM，可使用 `-javaagent` 注入。
 > 若启动器支持导入 JDK，同样支持 Attach API 注入。
 
 ## 工作原理
@@ -36,7 +36,7 @@ islantrue
 1. 通过 Attach API 连接到目标 JVM
 2. 注册 ClassFileTransformer，基于 ASM 字节码操作
 3. 动态检测 `ServerData`/`ServerInfo` 类结构
-4. 重写构造函数设置 `lan = true`，替换 getter 为 `return true`
+4. 通过字节码模式匹配定位字段和方法，重写构造函数设置 `lan = true`，替换 getter 为 `return true`
 5. Retransform 已加载的类 — 无需重启
 
 ## 构建

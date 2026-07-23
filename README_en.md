@@ -20,24 +20,24 @@ java -jar islantrue.jar --list
 # Specify PID to inject
 java -jar islantrue.jar --pid 12345
 
-# Launch Minecraft with agent
-java -javaagent:islantrue.jar -jar minecraft_server.jar
+# JVM agent injection
+-javaagent:islantrue.jar
 
 # Download JAR and script (same args)
 islantrue
 ```
 
 > **Android**: Launchers based on PojavLauncher (PojavLauncher, ZalithLauncher2, FCL, etc.)
-> run a full HotSpot JVM and support `java -jar islantrue.jar` or `-javaagent` injection.
+> run a full HotSpot JVM and support `-javaagent` injection.
 > If the launcher supports importing a JDK, Attach API injection also works.
 
 ## How It Works
 
-1. Attaches to the target JVM via Attach API
+1. Attaches to target JVM via Attach API
 2. Registers a ClassFileTransformer using ASM bytecode library
-3. Dynamically detects `ServerData`/`ServerInfo` class structure
-4. Rewrites constructor to set `lan = true`, replaces getter with `return true`
-5. Retransforms the loaded class — no restart needed
+3. Dynamically detects `ServerData`/`ServerInfo` class structures
+4. Locates fields and methods via bytecode pattern matching, rewrites constructors to set `lan = true`, replaces getter body with `return true`
+5. Retransforms loaded classes — no restart needed
 
 ## Build
 
@@ -56,3 +56,6 @@ rm -rf deps/META-INF/MANIFEST.MF deps/META-INF/*.SF deps/META-INF/*.RSA deps/MET
 jar cfm islantrue.jar src/main/resources/META-INF/MANIFEST.MF -C out . -C deps .
 rm -rf out lib deps
 ```
+
+## Disclaimer
+This tool only modifies the client-side `isOnLAN()` return value and does not tamper with server-side data. For integrated server use only.

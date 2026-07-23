@@ -12,19 +12,8 @@ import java.nio.file.Path;
 import java.security.ProtectionDomain;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class IsLanTrue implements ClassFileTransformer {
-
-    private static final Set<String> LAN_FIELD_NAMES = Set.of(
-        "lan", "lanServer", "local", "isLan", "field_78841_f", "field_147109_e"
-    );
-
-    private static final Set<String> LAN_GETTER_NAMES = Set.of(
-        "isLan", "isOnLAN", "isLocal", "func_78840_c", "method_2991", "method_3234"
-    );
-
-    private static final Set<String> TYPE_FIELD_NAMES = Set.of("type", "serverType");
 
     private static final Set<String> TARGET_CLASSES = Set.of(
         "net/minecraft/client/multiplayer/ServerData",
@@ -33,17 +22,7 @@ public class IsLanTrue implements ClassFileTransformer {
 
     private static final Set<String> DYNAMIC_TARGET_CLASSES = ConcurrentHashMap.newKeySet();
 
-    private final AtomicBoolean transformed = new AtomicBoolean(false);
-
-    public record PatchPlan(String className, FieldNode lanField, MethodNode getter,
-                            FieldNode typeField, boolean enumMode) {
-        PatchPlan(String className, FieldNode lanField, MethodNode getter) {
-            this(className, lanField, getter, null, false);
-        }
-        PatchPlan(String className, FieldNode lanField, MethodNode getter, FieldNode typeField) {
-            this(className, lanField, getter, typeField, true);
-        }
-    }
+    public record PatchPlan(String className, FieldNode lanField, MethodNode getter) {}
 
     public record ProcessInfo(String pid, String displayName) {}
     public record InjectResult(boolean success, String message) {}
@@ -104,7 +83,6 @@ public class IsLanTrue implements ClassFileTransformer {
             replaceGetter(plan.getter);
             ClassWriter cw = new ClassWriter(cr, ClassWriter.COMPUTE_FRAMES);
             classNode.accept(cw);
-            transformed.set(true);
             System.out.println("[islantrue] Patched " + className);
             return cw.toByteArray();
         } catch (Exception e) {
@@ -129,67 +107,87 @@ public class IsLanTrue implements ClassFileTransformer {
     }
 
     private static PatchPlan findPatchPlan(ClassNode classNode) {
-        FieldNode lanField = findLanField(classNode);
-        if (lanField == null) return null;
         MethodNode getter = findGetter(classNode);
-        if (getter == null) return null;
-        FieldNode typeField = findTypeField(classNode);
-        if (typeField != null && hasConstructor(classNode, "(Ljava/lang/String;Ljava/lang/String;" + typeField.desc + ";)V"))
-            return new PatchPlan(classNode.name, lanField, getter, typeField);
-        if (!hasConstructor(classNode, "(Ljava/lang/String;Ljava/lang/String;Z)V")) return null;
+        FieldNode lanField = findLanField(classNode, getter);
+        if (lanField == null) return null;
         return new PatchPlan(classNode.name, lanField, getter);
-    }
-
-    private static FieldNode findLanField(ClassNode classNode) {
-        for (FieldNode f : classNode.fields) {
-            if ((f.access & Opcodes.ACC_STATIC) != 0) continue;
-            if ("Z".equals(f.desc) && LAN_FIELD_NAMES.contains(f.name)) return f;
-        }
-        return null;
     }
 
     private static MethodNode findGetter(ClassNode classNode) {
         for (MethodNode m : classNode.methods) {
             if ((m.access & Opcodes.ACC_STATIC) != 0) continue;
-            if ("()Z".equals(m.desc) && LAN_GETTER_NAMES.contains(m.name)) return m;
+            if (!"()Z".equals(m.desc)) continue;
+            AbstractInsnNode insn = m.instructions.getFirst();
+            while (insn != null && insn.getOpcode() == -1) insn = insn.getNext();
+            if (insn == null || insn.getOpcode() != Opcodes.ALOAD) continue;
+            if (((VarInsnNode) insn).var != 0) continue;
+            insn = insn.getNext();
+            while (insn != null && insn.getOpcode() == -1) insn = insn.getNext();
+            if (insn == null || insn.getOpcode() != Opcodes.GETFIELD) continue;
+            if (!"Z".equals(((FieldInsnNode) insn).desc)) continue;
+            insn = insn.getNext();
+            while (insn != null && insn.getOpcode() == -1) insn = insn.getNext();
+            if (insn == null || insn.getOpcode() != Opcodes.IRETURN) continue;
+            return m;
         }
         return null;
     }
 
-    private static FieldNode findTypeField(ClassNode classNode) {
-        for (FieldNode f : classNode.fields) {
-            if ((f.access & Opcodes.ACC_STATIC) != 0) continue;
-            if (TYPE_FIELD_NAMES.contains(f.name) && f.desc.startsWith("L")) return f;
+    private static FieldNode findLanField(ClassNode classNode, MethodNode getter) {
+        if (getter != null) {
+            for (AbstractInsnNode insn = getter.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                if (insn.getOpcode() == Opcodes.GETFIELD) {
+                    FieldInsnNode gf = (FieldInsnNode) insn;
+                    if (!"Z".equals(gf.desc) || !gf.owner.equals(classNode.name)) continue;
+                    for (FieldNode f : classNode.fields) {
+                        if (f.name.equals(gf.name) && f.desc.equals(gf.desc)) return f;
+                    }
+                }
+            }
         }
-        return null;
-    }
-
-    private static boolean hasConstructor(ClassNode classNode, String desc) {
         for (MethodNode m : classNode.methods) {
-            if ("<init>".equals(m.name) && desc.equals(m.desc)) return true;
+            if (!"<init>".equals(m.name)) continue;
+            AbstractInsnNode insn = m.instructions.getFirst();
+            while (insn != null) {
+                if (insn.getOpcode() == Opcodes.ICONST_1) {
+                    AbstractInsnNode next = insn.getNext();
+                    while (next != null && next.getOpcode() == -1) next = next.getNext();
+                    if (next != null && next.getOpcode() == Opcodes.PUTFIELD) {
+                        FieldInsnNode pf = (FieldInsnNode) next;
+                        if ("Z".equals(pf.desc) && pf.owner.equals(classNode.name)) {
+                            for (FieldNode f : classNode.fields) {
+                                if (f.name.equals(pf.name) && f.desc.equals(pf.desc)) return f;
+                            }
+                        }
+                    }
+                }
+                insn = insn.getNext();
+            }
         }
-        return false;
+        return null;
     }
 
     private static void patchConstructors(ClassNode classNode, PatchPlan plan) {
-        String targetDesc = plan.enumMode
-            ? "(Ljava/lang/String;Ljava/lang/String;" + plan.typeField.desc + ")V"
-            : "(Ljava/lang/String;Ljava/lang/String;Z)V";
         for (MethodNode method : classNode.methods) {
-            if (!"<init>".equals(method.name) || !targetDesc.equals(method.desc)) continue;
-            AbstractInsnNode first = method.instructions.getFirst();
-            if (first == null) continue;
-            AbstractInsnNode second = first.getNext();
-            if (second == null || second.getOpcode() != Opcodes.INVOKESPECIAL) continue;
-            InsnList insert = new InsnList();
-            insert.add(new VarInsnNode(Opcodes.ALOAD, 0));
-            insert.add(new InsnNode(Opcodes.ICONST_1));
-            insert.add(new FieldInsnNode(Opcodes.PUTFIELD, plan.className, plan.lanField.name, plan.lanField.desc));
-            method.instructions.insertBefore(second, insert);
+            if (!"<init>".equals(method.name)) continue;
+            for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                if (insn.getOpcode() == Opcodes.INVOKESPECIAL) {
+                    MethodInsnNode mi = (MethodInsnNode) insn;
+                    if ("<init>".equals(mi.name)) {
+                        InsnList insert = new InsnList();
+                        insert.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                        insert.add(new InsnNode(Opcodes.ICONST_1));
+                        insert.add(new FieldInsnNode(Opcodes.PUTFIELD, plan.className, plan.lanField.name, plan.lanField.desc));
+                        method.instructions.insert(insn, insert);
+                        break;
+                    }
+                }
+            }
         }
     }
 
     private static void replaceGetter(MethodNode getter) {
+        if (getter == null) return;
         getter.instructions.clear();
         getter.tryCatchBlocks.clear();
         getter.localVariables = null;
@@ -275,7 +273,7 @@ public class IsLanTrue implements ClassFileTransformer {
         System.out.println("  --pid <PID>     Inject into specific process");
         System.out.println("  --help, -h      Show this help");
         System.out.println();
-        System.out.println("Agent: java -javaagent:islantrue.jar -jar minecraft_server.jar");
+        System.out.println("Agent: java -javaagent:islantrue.jar -jar <server.jar>");
     }
 
     private static void listProcesses(PlatformInjector injector) {
