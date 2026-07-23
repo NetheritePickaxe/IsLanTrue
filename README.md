@@ -20,8 +20,8 @@ java -jar islantrue.jar --list
 # 指定 PID 注入
 java -jar islantrue.jar --pid 12345
 
-# 启动时附带 agent
-java -javaagent:islantrue.jar -jar minecraft_server.jar
+# JVM 启动参数注入
+-javaagent:islantrue.jar
 
 # 同时下载jar和脚本（传参同上）
 islantrue
@@ -56,3 +56,6 @@ rm -rf deps/META-INF/MANIFEST.MF deps/META-INF/*.SF deps/META-INF/*.RSA deps/MET
 jar cfm islantrue.jar src/main/resources/META-INF/MANIFEST.MF -C out . -C deps .
 rm -rf out lib deps
 ```
+
+## 免责声明
+本工具仅修改客户端本地  isOnLAN()  返回值，不涉及服务器端数据篡改。仅限集成服务端使用。
